@@ -1,0 +1,39 @@
+name: Bug report
+description: A retry that happened when it should not, or did not happen when it should
+labels: [bug]
+body:
+  - type: textarea
+    id: call
+    attributes:
+      label: The call
+      description: The retryFetch or createRetryFetch call with its options (the URL can be fake).
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What the server returned on each attempt (status, Retry-After) or the error, and what retry-fetch did.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: retry-fetch version
+      placeholder: '0.1.0'
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and version
+      placeholder: 'Node 22.12 / Chrome 131 / Deno 2.1 / Cloudflare Workers'
+    validations:
+      required: true
