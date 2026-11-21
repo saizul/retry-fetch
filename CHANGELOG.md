@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `RateLimit-Reset` and `X-RateLimit-Reset` are used as the wait when a
+  retryable response has no usable `Retry-After` (delta-seconds, or a Unix
+  timestamp for values of 1 000 000 000 and up), capped by `maxRetryAfter`.
+  Turn it off with `respectRateLimitReset: false`.
+- `parseRateLimitReset(headers, now?)` helper.
+- `RetryInfo.delaySource` tells `onRetry` whether the wait came from backoff,
+  `Retry-After` or a rate-limit reset header.
+
 ## [0.1.0] - 2026-11-19
 
 ### Added

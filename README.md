@@ -11,7 +11,7 @@
 
 - **Drop-in**: same arguments, same `Response`. Works with the global `fetch` in Node 20+, browsers, Deno, Bun, Cloudflare Workers and other edge runtimes.
 - **Exponential backoff with full jitter** (the AWS recommendation), with caps.
-- **Honours `Retry-After`** (seconds or HTTP date) on 429 and 503, and gives up if the server asks for an unreasonable wait.
+- **Honours `Retry-After`** (seconds or HTTP date) on 429 and 503, falls back to `RateLimit-Reset` / `X-RateLimit-Reset`, and gives up if the server asks for an unreasonable wait.
 - **Idempotency-aware**: only GET, HEAD, OPTIONS, TRACE, PUT and DELETE are retried, unless the request carries an `Idempotency-Key` header or you opt in. Stream bodies are never re-sent.
 - **Per-attempt timeout and an overall deadline**, both through `AbortSignal`, and your own `signal` still cancels everything.
 - **`onRetry` hook**, a `shouldRetry` override, a small **circuit breaker** and **typed errors** with stable codes.
@@ -90,7 +90,7 @@ An attempt is retried when **all** of these hold:
 
 `shouldRetry` can override 1 and 2. Your own `signal` aborting is never retried: the promise rejects with the signal's reason, exactly like `fetch`.
 
-The wait before retry *n* is `random() * min(maxDelay, minDelay * factor^(n-1))` (full jitter), so with the defaults about 0-250 ms, 0-500 ms, 0-1 s... If a retryable response has a `Retry-After` header, that wait is used instead; if it is longer than `maxRetryAfter` (60 s), the response is returned straight away.
+The wait before retry *n* is `random() * min(maxDelay, minDelay * factor^(n-1))` (full jitter), so with the defaults about 0-250 ms, 0-500 ms, 0-1 s... If a retryable response has a `Retry-After` header, that wait is used instead. Without one, a `RateLimit-Reset` (seconds until the window resets) or `X-RateLimit-Reset` (a Unix time in seconds, as GitHub sends it) header is used the same way; values of 1 000 000 000 or more are read as timestamps. If the wait is longer than `maxRetryAfter` (60 s), the response is returned straight away. `onRetry` receives `delaySource`: `'backoff'`, `'retry-after'` or `'rate-limit-reset'`.
 
 When retries run out on a response, **the last response is returned** (like `fetch`, a 503 is not an exception) unless `throwHttpErrors` is set. Bodies of responses that are retried are cancelled so connections are freed.
 
@@ -110,11 +110,12 @@ All options go in `init.retry` for `retryFetch`, or in the defaults of `createRe
 | `retryNonIdempotent` | `false` | Retry every method. |
 | `idempotencyHeader` | `'Idempotency-Key'` | Requests with this header are retried whatever the method. `false` turns it off. |
 | `respectRetryAfter` | `true` | Use the `Retry-After` header as the wait. |
-| `maxRetryAfter` | `60000` | Longest `Retry-After` wait accepted; longer means give up. |
+| `respectRateLimitReset` | `true` | Without `Retry-After`, wait for `RateLimit-Reset` / `X-RateLimit-Reset`. |
+| `maxRetryAfter` | `60000` | Longest `Retry-After` or reset wait accepted; longer means give up. |
 | `timeout` | none | Limit in ms for each attempt, until the response headers arrive. |
 | `deadline` | none | Limit in ms for the whole operation, waits included. |
 | `shouldRetry` | none | `(ctx) => boolean \| undefined`, may be async. `undefined` keeps the default decision. |
-| `onRetry` | none | `(info) => void`, may be async. Called before each wait with `attempt`, `delay`, `retriesLeft`, `fromRetryAfter`, `method`, `url` and `error` or `response`. Throwing stops retrying. |
+| `onRetry` | none | `(info) => void`, may be async. Called before each wait with `attempt`, `delay`, `retriesLeft`, `fromRetryAfter`, `delaySource`, `method`, `url` and `error` or `response`. Throwing stops retrying. |
 | `circuitBreaker` | none | A `CircuitBreaker` instance. |
 | `throwHttpErrors` | `false` | Throw `HttpError` when the final response is not ok. |
 | `fetch` | `globalThis.fetch` | The fetch to wrap, e.g. a mock or a fetch with a custom dispatcher. |
@@ -165,6 +166,7 @@ Every attempt counts: a network error, a timeout or a 5xx response is a failure;
 
 - `computeDelay(retry, options?, random?)`: the backoff formula above.
 - `parseRetryAfter(value, now?)`: `Retry-After` header to milliseconds, or `undefined`.
+- `parseRateLimitReset(headers, now?)`: `RateLimit-Reset` / `X-RateLimit-Reset` to milliseconds, or `undefined`.
 - `isRetryableStatus(status)`: the default status rule.
 - `IDEMPOTENT_METHODS`: the default method list.
 
@@ -196,7 +198,6 @@ Testing your own code: pass `fetch` to inject a mock and `sleep: async () => {}`
 
 Ideas for the next versions. Those marked *good first issue* are small and described in [CONTRIBUTING.md](CONTRIBUTING.md#good-first-issues).
 
-- Read `RateLimit-Reset` / `X-RateLimit-Reset` as a fallback for `Retry-After` (*good first issue*)
 - A `retryBudget` to cap the ratio of retries to requests across calls
 - `onAttempt` hook with timing for metrics (*good first issue*)
 - A `jitter: 'decorrelated'` strategy (*good first issue*)

@@ -9,7 +9,7 @@ export {
   RetryFetchError,
   type RetryFetchErrorCode,
 } from './errors.js';
-export { parseRetryAfter } from './retry-after.js';
+export { parseRateLimitReset, parseRetryAfter } from './retry-after.js';
 export {
   createRetryFetch,
   type FetchInput,

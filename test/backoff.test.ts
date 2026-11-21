@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { computeDelay, parseRetryAfter } from '../src/index.js';
+import { computeDelay, parseRateLimitReset, parseRetryAfter } from '../src/index.js';
 
 describe('computeDelay', () => {
   it('grows exponentially without jitter and stops at maxDelay', () => {
@@ -69,5 +69,30 @@ describe('parseRetryAfter', () => {
     for (const value of [null, undefined, '', '1.5', '-3', 'soon', 'Thu, 99 Foo 2026']) {
       assert.equal(parseRetryAfter(value, now), undefined, String(value));
     }
+  });
+});
+
+describe('parseRateLimitReset', () => {
+  const now = Date.parse('2026-11-19T10:00:00Z');
+  const h = (init: Record<string, string>) => new Headers(init);
+
+  it('reads RateLimit-Reset as delta-seconds', () => {
+    assert.equal(parseRateLimitReset(h({ 'RateLimit-Reset': '30' }), now), 30_000);
+    assert.equal(parseRateLimitReset(h({ 'RateLimit-Reset': '1.5' }), now), 1500);
+  });
+
+  it('reads X-RateLimit-Reset as a Unix timestamp', () => {
+    assert.equal(parseRateLimitReset(h({ 'X-RateLimit-Reset': String(now / 1000 + 45) }), now), 45_000);
+    assert.equal(parseRateLimitReset(h({ 'X-RateLimit-Reset': String(now / 1000 - 10) }), now), 0);
+  });
+
+  it('prefers RateLimit-Reset over X-RateLimit-Reset', () => {
+    assert.equal(parseRateLimitReset(h({ 'RateLimit-Reset': '5', 'X-RateLimit-Reset': '9' }), now), 5000);
+  });
+
+  it('skips malformed values and missing headers', () => {
+    assert.equal(parseRateLimitReset(h({}), now), undefined);
+    assert.equal(parseRateLimitReset(h({ 'RateLimit-Reset': 'soon' }), now), undefined);
+    assert.equal(parseRateLimitReset(h({ 'RateLimit-Reset': '-3', 'X-RateLimit-Reset': '7' }), now), 7000);
   });
 });
