@@ -74,26 +74,22 @@ These are deliberately small. Each one lists where to start.
    (`min(maxDelay, random(minDelay, previous * 3))`) to `src/backoff.ts`.
    It needs the previous delay, so pass it from the loop in
    `src/retry-fetch.ts`. Test it in `test/backoff.test.ts`.
-2. **`RateLimit-Reset` fallback**: when there is no `Retry-After`, read
-   `RateLimit-Reset` (delta seconds) on 429 responses. Change the
-   Retry-After block in `src/retry-fetch.ts` and add tests next to the
-   existing Retry-After tests.
-3. **`onAttempt` hook**: call `onAttempt({ attempt, duration, status, error })`
+2. **`onAttempt` hook**: call `onAttempt({ attempt, duration, status, error })`
    after every attempt, for metrics. Add the option type in
    `src/retry-fetch.ts` and document it in the README options table.
-4. **`maxAttempts` alias**: some users think in attempts, not retries.
+3. **`maxAttempts` alias**: some users think in attempts, not retries.
    Accept `maxAttempts` (`retries + 1`) and throw a `RangeError` if both are
    given. Change `checkOptions()` in `src/retry-fetch.ts`.
-5. **Example with `undici` dispatcher**: add `examples/undici-agent.mjs`
+4. **Example with `undici` dispatcher**: add `examples/undici-agent.mjs`
    showing how to pass a `fetch` bound to a custom keep-alive agent (as a
    comment-only snippet if you do not want a dependency).
-6. **Deno and Bun smoke test**: add a CI job that runs
+5. **Deno and Bun smoke test**: add a CI job that runs
    `examples/basic.mjs` with `deno run` and `bun` to prove the runtimes
    work. Edit `.github/workflows/ci.yml`.
-7. **Error `toJSON()`**: add `toJSON()` to `RetryFetchError` in
+6. **Error `toJSON()`**: add `toJSON()` to `RetryFetchError` in
    `src/errors.ts` returning `name`, `code`, `message` and the class's own
    fields, so errors log nicely.
-8. **README recipe for React Query / SWR**: a short section showing
+7. **README recipe for React Query / SWR**: a short section showing
    `createRetryFetch` with `retries: 0` in the library and retries in the
    wrapper, and why you should not retry in both.
 

@@ -273,6 +273,46 @@ describe('retryFetch: Retry-After', () => {
     const t = setup([status(503, { 'Retry-After': 'later' }), status(200)]);
     await retryFetch(URL_, { retry: t.options });
     assert.deepEqual(t.delays, [125]);
+    assert.equal(t.retries[0]!.delaySource, 'backoff');
+  });
+});
+
+describe('retryFetch: rate-limit reset headers', () => {
+  it('waits for RateLimit-Reset (delta seconds) when there is no Retry-After', async () => {
+    const t = setup([status(429, { 'RateLimit-Reset': '4' }), status(200)]);
+    assert.equal((await retryFetch(URL_, { retry: t.options })).status, 200);
+    assert.deepEqual(t.delays, [4000]);
+    assert.equal(t.retries[0]!.delaySource, 'rate-limit-reset');
+    assert.equal(t.retries[0]!.fromRetryAfter, false);
+  });
+
+  it('reads X-RateLimit-Reset as a Unix timestamp', async () => {
+    const reset = Math.ceil(Date.now() / 1000) + 20;
+    const t = setup([status(429, { 'X-RateLimit-Reset': String(reset) }), status(200)]);
+    await retryFetch(URL_, { retry: t.options });
+    assert.ok(t.delays[0]! > 15_000 && t.delays[0]! <= 21_000, String(t.delays[0]));
+  });
+
+  it('prefers Retry-After over the reset headers', async () => {
+    const t = setup([status(429, { 'Retry-After': '2', 'RateLimit-Reset': '9' }), status(200)]);
+    await retryFetch(URL_, { retry: t.options });
+    assert.deepEqual(t.delays, [2000]);
+    assert.equal(t.retries[0]!.delaySource, 'retry-after');
+  });
+
+  it('gives up when the reset is further away than maxRetryAfter', async () => {
+    const t = setup([status(429, { 'RateLimit-Reset': '600' }), status(200)]);
+    assert.equal((await retryFetch(URL_, { retry: t.options })).status, 429);
+    assert.equal(t.calls.length, 1);
+  });
+
+  it('can be turned off with respectRateLimitReset or respectRetryAfter', async () => {
+    const t = setup([status(429, { 'RateLimit-Reset': '4' }), status(200)], { respectRateLimitReset: false });
+    await retryFetch(URL_, { retry: t.options });
+    assert.deepEqual(t.delays, [125]);
+    const u = setup([status(429, { 'RateLimit-Reset': '4' }), status(200)], { respectRetryAfter: false });
+    await retryFetch(URL_, { retry: u.options });
+    assert.deepEqual(u.delays, [125]);
   });
 });
 

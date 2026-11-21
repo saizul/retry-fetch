@@ -1,7 +1,7 @@
 import { type BackoffOptions, computeDelay } from './backoff.js';
 import type { CircuitBreaker } from './circuit-breaker.js';
 import { AttemptTimeoutError, DeadlineExceededError, HttpError, RetriesExhaustedError } from './errors.js';
-import { parseRetryAfter } from './retry-after.js';
+import { parseRateLimitReset, parseRetryAfter } from './retry-after.js';
 
 /** Whatever `fetch` accepts as its first argument: a URL string, a `URL` or a `Request`. */
 export type FetchInput = Parameters<typeof fetch>[0];
@@ -38,6 +38,11 @@ export interface RetryInfo extends RetryContext {
   retriesLeft: number;
   /** True when `delay` came from the response's `Retry-After` header. */
   fromRetryAfter: boolean;
+  /**
+   * Where `delay` came from: the backoff formula, the `Retry-After` header or
+   * a `RateLimit-Reset` / `X-RateLimit-Reset` header.
+   */
+  delaySource: 'backoff' | 'retry-after' | 'rate-limit-reset';
 }
 
 export interface RetryOptions extends BackoffOptions {
@@ -57,7 +62,13 @@ export interface RetryOptions extends BackoffOptions {
   idempotencyHeader?: string | false;
   /** Wait as long as the `Retry-After` header asks on retryable responses. Default true. */
   respectRetryAfter?: boolean;
-  /** If `Retry-After` asks for longer than this, give up and return the response. Default 60 000 ms. */
+  /**
+   * When a retryable response has no usable `Retry-After`, wait until the
+   * `RateLimit-Reset` or `X-RateLimit-Reset` header says the window resets.
+   * Ignored when `respectRetryAfter` is false. Default true.
+   */
+  respectRateLimitReset?: boolean;
+  /** If `Retry-After` (or a rate-limit reset) asks for longer than this, give up and return the response. Default 60 000 ms. */
   maxRetryAfter?: number;
   /** Time limit for each attempt until the response headers arrive. Default: none. */
   timeout?: number;
@@ -276,14 +287,19 @@ async function run(input: FetchInput, init: RetryRequestInit | undefined, option
       if (!wantsRetry || attempt >= maxAttempts) return giveUp();
 
       let delay = computeDelay(attempt, options, random);
-      let fromRetryAfter = false;
+      let delaySource: RetryInfo['delaySource'] = 'backoff';
       if (!failed && options.respectRetryAfter !== false) {
-        const header = response!.headers.get('retry-after');
-        const asked = parseRetryAfter(header);
+        const headers = response!.headers;
+        let asked = parseRetryAfter(headers.get('retry-after'));
+        let source: RetryInfo['delaySource'] = 'retry-after';
+        if (asked === undefined && options.respectRateLimitReset !== false) {
+          asked = parseRateLimitReset(headers);
+          source = 'rate-limit-reset';
+        }
         if (asked !== undefined) {
           if (asked > (options.maxRetryAfter ?? 60_000)) return giveUp();
           delay = asked;
-          fromRetryAfter = true;
+          delaySource = source;
         }
       }
       if (Date.now() + delay >= deadlineAt) {
@@ -295,7 +311,8 @@ async function run(input: FetchInput, init: RetryRequestInit | undefined, option
         ...context,
         delay,
         retriesLeft: maxAttempts - attempt - 1,
-        fromRetryAfter,
+        fromRetryAfter: delaySource === 'retry-after',
+        delaySource,
       });
       unlink();
       if (response) discard(response);
